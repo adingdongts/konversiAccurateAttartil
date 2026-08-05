@@ -282,6 +282,9 @@ CONVERSION_TABLES = {
 
 UNREGISTERED_LABEL = "‼️ TIDAK TERDAFTAR (perlu didaftarkan manual)"
 
+
+
+
 # ---------------------------------------------------------------------------
 # Header lengkap sesuai template Accurate (urutan HARUS persis seperti ini).
 # Kolom yang memang diisi datanya cuma: CUSTOMER NO, NUMBER, BRANCH, DATE,
@@ -342,6 +345,64 @@ def normalize(s: str) -> str:
     s = re.sub(r"[^A-Z0-9]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
+# ---------------------------------------------------------------------------
+# Mapping Nama Produk Accurate -> Kode Produk Accurate
+# Sumber: sheet "Produk Accurate" di file mapingan_kode_buat_template.xlsx
+# Key di-normalize supaya matching tidak peduli huruf besar/kecil.
+# ---------------------------------------------------------------------------
+PRODUCT_CODE_TABLE = [
+    ("AL-MATSUROT SUGHRO", "AL-MATSUROT SUGHRO"),
+    ("Almatsurat Sughro", "100165"),
+    ("BACALAH", "BACALAH"),
+    ("BUKTI PENERIMAAN KAS KECIL", "BUKTI PENERIMAAN KAS KECIL"),
+    ("BUKTI PENGELUARAN KAS", "BUKTI PENGELUARAN KAS"),
+    ("BUKU ABU HAWARIY", "BUKU ABU HAWARIY"),
+    ("BUKU BAHASA ARAB", "BUKU BAHASA ARAB"),
+    ("BUKU DIROSAH TKIT", "BUKU DIROSAH TKIT"),
+    ("BUKU KETIKA PENGHAFAL JATUH CINTA", "BUKU KETIKA PENGHAFAL JATUH CINTA"),
+    ("BUKU MENULIS JUZ 30", "BUKU MENULIS JUZ 30"),
+    ("BUKU PINTAR MEMBACA", "BUKU PINTAR MEMBACA"),
+    ("BUKU PINTAR TAUD", "BUKU PINTAR TAUD"),
+    ("Buku Kelompok A ( Hijaiyah, Angka, Abjad, Garis)", "100172"),
+    ("Buku Kelompok B ( Hijaiyah, Abjad )", "100173"),
+    ("Buku Paket", "100171"),
+    ("Buku Panduan Doa dan Hadis", "100175"),
+    ("Buku Pintar", "100174"),
+    ("Buku Prestasi", "100176"),
+    ("CEPAT MEMBACA", "CEPAT MEMBACA"),
+    ("HADITS DOA SD BAGIAN 2", "HADITS DOA SD BAGIAN 2"),
+    ("MEJA LEKAR", "MEJA LEKAR"),
+    ("MUTABAAH KC", "MUTABAAH KC"),
+    ("MUTABAAH TAUD", "MUTABAAH TAUD"),
+    ("SAMPUL RAPOT TK1", "SAMPUL RAPOT TK1"),
+    ("SAMPUL RAPOT TK2", "SAMPUL RAPOT TK2"),
+    ("TAS AT TARTIL", "TAS AT TARTIL"),
+    ("Buku Ilmu Tajwid DR. Aiman", "Buku Ilmu Tajwid DR. Aiman"),
+    ("IQRA ANAK 6 JILID", "IQRA ANAK 6 JILID"),
+    ("IQRO DEWASA (HVS PUTIH WARNA)", "IQRO DEWASA (HVS PUTIH WARNA)"),
+    ("IQRO DEWASA KERTAS BURAM", "IQRO DEWASA KERTAS BURAM"),
+    ("IQRO KLASIK", "IQRO KLASIK"),
+    ("IQRO SATUAN", "IQRO SATUAN"),
+    ("JUZ AMMA (1-2)", "JUZ AMMA (1-2)"),
+    ("JUZ AMMA (26-30)", "JUZ AMMA (26-30)"),
+    ("JUZ AMMA (28-30)", "JUZ AMMA (28-30)"),
+    ("METODE KUNCI", "METODE KUNCI"),
+    ("MUSHAF ATTARTIL B5", "MUSHAF ATTARTIL B5"),
+    ("MUSHAF BESAR SLETING BARU", "MUSHAF BESAR SLETING BARU"),
+    ("MUSHAF HAFALAN KECIL", "MUSHAF HAFALAN KECIL"),
+    ("MUSHAF SLETING KECIL", "MUSHAF SLETING KECIL"),
+    ("MUTABAAH ANAK", "MUTABAAH ANAK"),
+    ("MUTABAAH DEWASA", "MUTABAAH DEWASA"),
+    ("RAPOT ANAK", "RAPOT ANAK"),
+    ("RAPOT DEWASA", "RAPOT DEWASA"),
+    ("RISALAH", "RISALAH"),
+    ("Buku Ayat Ghorib", "100094"),
+    ("Buku Hijaiyah", "100045"),
+    ("Kartu Infak", "100101"),
+    ("Juz amma 30", "Juz amma 30"),
+]
+
+PRODUCT_CODE_MAP = {normalize(nama): kode for nama, kode in PRODUCT_CODE_TABLE}
 
 def build_lookup(area: str) -> dict:
     """
@@ -561,19 +622,21 @@ if uploaded is not None:
         # Setiap baris item dalam grup (tanggal) yang sama tetap diisi
         # CUSTOMER NO / NUMBER / BRANCH / DATE-nya (tidak dikosongkan lagi).
         for _, r in sub_terdaftar.iterrows():
+            accurate_name = item_to_accurate.get(r["NamaItem"])
+            kode_produk = PRODUCT_CODE_MAP.get(normalize(accurate_name)) if accurate_name else None
+
             row = {h: None for h in OUTPUT_HEADERS}
             row["CUSTOMER NO"] = customer_no
             row["NUMBER"] = number
             row["BRANCH"] = "EKRAF"
             row["DATE"] = date_str
-            row["ITEM:ITEM NO"] = item_to_accurate.get(r["NamaItem"])
+            row["ITEM:ITEM NO"] = kode_produk if kode_produk else accurate_name
             row["ITEM:QUANTITY"] = r["Qty"]
             row["ITEM:UNITPRICE"] = r["HargaSatuan"]
             row["ITEM:UNIT"] = "pcs"
             row["ITEM:WAREHOUSE NAME "] = warehouse_name
             row["ITEM:DEPT NAME"] = "EKRAF"
             output_rows.append(row)
-
     out_df = pd.DataFrame(output_rows, columns=OUTPUT_HEADERS)
 
     st.subheader("4a. Sheet Template (siap import ke Accurate)")
