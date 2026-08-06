@@ -283,13 +283,8 @@ CONVERSION_TABLES = {
 UNREGISTERED_LABEL = "‼️ TIDAK TERDAFTAR (perlu didaftarkan manual)"
 
 
-
-
 # ---------------------------------------------------------------------------
 # Header lengkap sesuai template Accurate (urutan HARUS persis seperti ini).
-# Kolom yang memang diisi datanya cuma: CUSTOMER NO, NUMBER, BRANCH, DATE,
-# ITEM:ITEM NO, ITEM:QUANTITY, ITEM:UNITPRICE, ITEM:UNIT,
-# ITEM:WAREHOUSE NAME  -> sisanya sengaja dikosongkan.
 # ---------------------------------------------------------------------------
 OUTPUT_HEADERS = [
     "CUSTOMER NO", "NUMBER", "BRANCH", "DATE", "TAXABLE", "ADDRESS",
@@ -336,7 +331,7 @@ OUTPUT_HEADERS = [
 ]
 
 UNREGISTERED_HEADERS = [
-    "Tanggal", "Nama Item", "Qty", "Harga Satuan", "Catatan",
+    "Tanggal", "Nama Item", "Qty", "Subtotal (Rp)", "Catatan",
 ]
 
 
@@ -404,6 +399,96 @@ PRODUCT_CODE_TABLE = [
 
 PRODUCT_CODE_MAP = {normalize(nama): kode for nama, kode in PRODUCT_CODE_TABLE}
 
+# ---------------------------------------------------------------------------
+# Mapping Nama/Kode Produk Accurate -> Satuan (Nama Satuan)
+# Sumber: sheet "Pustaka Ekraf" & "Pustaka Ustadz" (kolom Kode Barang / Nama
+# Barang / Nama Satuan). Hampir semua produk satuannya "pcs" (lowercase) —
+# supaya konsisten dengan master data Accurate dan tidak ada lagi campuran
+# "pcs"/"PCS"/"PCs" yang bikin Accurate reject saat import.
+# Yang tidak "pcs" cukup didaftarkan di UNIT_TABLE; sisanya otomatis pakai
+# DEFAULT_UNIT. Key di-normalize (upper, non-alnum -> spasi) supaya matching
+# case-insensitive & tidak peduli tanda baca.
+# ---------------------------------------------------------------------------
+UNIT_TABLE = [
+    # --- Sheet "Pustaka Ekraf" ---
+    ("AL-MATSUROT SUGHRO", "pcs"),
+    ("BACALAH", "pcs"),
+    ("100094", "PCS"),
+    ("SAMPUL RAPOT TK1", "pcs"),
+    ("BUKTI PENERIMAAN KAS KECIL", "pcs"),
+    ("100175", "PCS"),
+    ("SAMPUL RAPOT TK2", "pcs"),
+    ("BUKTI PENGELUARAN KAS", "pcs"),
+    ("BUKU ABU HAWARIY", "pcs"),
+    ("BUKU BAHASA ARAB", "pcs"),
+    ("100101", "PCS"),
+    ("BUKU DIROSAH TKIT", "pcs"),
+    ("BUKU KETIKA PENGHAFAL JATUH CINTA", "pcs"),
+    ("BUKU MENULIS JUZ 30", "pcs"),
+    ("100174", "PCS"),
+    ("BUKU PINTAR MEMBACA", "pcs"),
+    ("BUKU PINTAR TAUD", "pcs"),
+    ("100172", "PCS"),
+    ("100173", "PCS"),
+    ("100171", "PCS"),
+    ("100176", "PCS"),
+    ("CEPAT MEMBACA", "pcs"),
+    ("HADITS DOA SD BAGIAN 2", "pcs"),
+    ("100209", "PCS"),
+    ("MEJA LEKAR", "bh"),
+    ("MUTABAAH KC", "pcs"),
+    ("MUTABAAH TAUD", "pcs"),
+    ("TAS AT TARTIL", "pcs"),
+    ("Buku Mutabaah AGQ", "pcs"),
+    # --- Sheet "Pustaka Ustadz" ---
+    ("Buku Ilmu Tajwid DR. Aiman", "pcs"),
+    ("IQRO DEWASA (HVS PUTIH WARNA)", "pcs"),
+    ("IQRO DEWASA KERTAS BURAM", "pcs"),
+    ("IQRO KLASIK", "pcs"),
+    ("Hutang Konsinyasi", ""),  # satuan kosong di sumber -> fallback DEFAULT_UNIT
+    ("IQRO SATUAN", "pcs"),
+    ("JUZ AMMA (26-30)", "pcs"),
+    ("MUSHAF SLETING KECIL", "pcs"),
+    ("RISALAH", "pcs"),
+    ("MUSHAF ATTARTIL B5", "pcs"),
+    ("MUSHAF HAFALAN KECIL", "pcs"),
+    ("MUSHAF BESAR SLETING BARU", "pcs"),
+    ("JUZ AMMA (1-2)", "pcs"),
+    ("RAPOT DEWASA", "pcs"),
+    ("IQRA ANAK 6 JILID", "pcs"),
+    ("RAPOT ANAK", "pcs"),
+    ("JUZ AMMA (28-30)", "pcs"),
+    ("MUTABAAH ANAK", "pcs"),
+    ("METODE KUNCI", "pcs"),
+    ("MUTABAAH DEWASA", "pcs"),
+    ("Juz amma 30", "pcs"),
+    ("BUKU HIJAIYAH", "PCS"),
+]
+# Buang entry dengan value kosong (biar tidak override DEFAULT_UNIT dengan "")
+UNIT_TABLE = [(k, v) for k, v in UNIT_TABLE if v]
+UNIT_MAP = {normalize(k): v for k, v in UNIT_TABLE}
+DEFAULT_UNIT = "pcs"
+
+
+def get_unit(accurate_name: str, kode_produk: str) -> str:
+    """
+    Tentukan ITEM:UNIT berdasarkan kode produk dulu (lebih spesifik),
+    lalu nama produk Accurate, fallback ke DEFAULT_UNIT kalau tidak ada
+    di UNIT_MAP sama sekali. Ini menggantikan hardcode "pcs" yang lama,
+    supaya nilainya selalu konsisten (lowercase, seragam) dan tidak lagi
+    tercampur pcs/PCS/PCs yang menyebabkan Accurate reject saat import.
+    """
+    if kode_produk:
+        u = UNIT_MAP.get(normalize(kode_produk))
+        if u:
+            return u
+    if accurate_name:
+        u = UNIT_MAP.get(normalize(accurate_name))
+        if u:
+            return u
+    return DEFAULT_UNIT
+
+
 def build_lookup(area: str) -> dict:
     """
     Bangun dict lookup dari CONVERSION_TABLES untuk 1 cabang:
@@ -467,6 +552,18 @@ with st.expander(f"Lihat tabel konversi lengkap — {area}"):
     )
     st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
+with st.expander("Lihat tabel satuan (ITEM:UNIT) per produk"):
+    unit_preview_df = pd.DataFrame(
+        UNIT_TABLE + [("(semua produk lain)", DEFAULT_UNIT)],
+        columns=["Nama/Kode Produk Accurate", "Satuan"],
+    )
+    st.dataframe(unit_preview_df, use_container_width=True, hide_index=True)
+    st.caption(
+        "Kalau ternyata master satuan di Accurate pakai case berbeda (misal 'PCS' "
+        "bukan 'pcs'), atau ada produk lain yang satuannya bukan 'pcs', edit "
+        "UNIT_TABLE / DEFAULT_UNIT di kode."
+    )
+
 # ---------------------------------------------------------------------------
 # Step 2: upload file laporan penjualan
 # ---------------------------------------------------------------------------
@@ -486,24 +583,28 @@ if uploaded is not None:
     col_tanggal = find_column(raw_df, ["Tanggal", "No Transaksi"])
     col_item = find_column(raw_df, ["Nama Item"])
     col_qty = find_column(raw_df, ["Qty"])
-    col_harga = find_column(raw_df, ["Harga Satuan"])
+    col_subtotal = find_column(raw_df, ["Subtotal (Rp)", "Subtotal"])
+    col_petugas = find_column(raw_df, ["Petugas"])
+    col_santri = find_column(raw_df, ["Nama Santri"])
 
     missing = [
         name for name, col in [
             ("Tanggal / No Transaksi", col_tanggal), ("Nama Item", col_item),
-            ("Qty", col_qty), ("Harga Satuan", col_harga),
+            ("Qty", col_qty), ("Subtotal (Rp)", col_subtotal),
+            ("Petugas", col_petugas), ("Nama Santri", col_santri),
         ] if col is None
     ]
     if missing:
         st.error(
             "Kolom berikut tidak ditemukan di file input: "
             + ", ".join(missing)
-            + ". Pastikan nama kolom sesuai laporan (Tanggal, Nama Item, Qty, Harga Satuan)."
+            + ". Pastikan nama kolom sesuai laporan (Tanggal, Nama Item, Qty, "
+              "Subtotal (Rp), Petugas, Nama Santri)."
         )
         st.stop()
 
-    df = raw_df[[col_tanggal, col_item, col_qty, col_harga]].copy()
-    df.columns = ["Tanggal", "NamaItem", "Qty", "HargaSatuan"]
+    df = raw_df[[col_tanggal, col_item, col_qty, col_subtotal, col_petugas, col_santri]].copy()
+    df.columns = ["Tanggal", "NamaItem", "Qty", "Subtotal", "Petugas", "NamaSantri"]
 
     def parse_qty(v):
         if pd.isna(v):
@@ -514,23 +615,45 @@ if uploaded is not None:
             return 0
         return float(m.group(0).replace(",", "").replace(".", "") if "," in s else m.group(0))
 
-    def parse_harga(v):
+    def parse_rupiah(v):
         if pd.isna(v):
             return 0
-        s = str(v)
+        # Kalau sudah numerik (int/float) dari Excel, langsung pakai apa
+        # adanya. JANGAN di-str() dulu, karena str(8000.0) == "8000.0" dan
+        # kalau titik desimalnya ikut di-strip nanti jadi "80000" (nol
+        # kebawa nambah). Ini penyebab bug subtotal 8000 -> 80000.
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        # String dengan pemisah ribuan ala Indonesia, misal "8.000" atau
+        # "8,000" -> buang semua titik/koma karena di sini fungsinya
+        # sebagai pemisah ribuan, bukan desimal.
+        s = re.sub(r"[.,]", "", s)
         s = re.sub(r"[^\d]", "", s)
         return float(s) if s else 0
 
     df["Qty"] = df["Qty"].apply(parse_qty)
-    df["HargaSatuan"] = df["HargaSatuan"].apply(parse_harga)
+    df["Subtotal"] = df["Subtotal"].apply(parse_rupiah)
     df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce", dayfirst=True)
     df = df.dropna(subset=["Tanggal"])
     df["NamaItem"] = df["NamaItem"].astype(str).str.strip()
+    df["Petugas"] = df["Petugas"].astype(str).str.strip().replace({"nan": ""})
+    df["NamaSantri"] = df["NamaSantri"].astype(str).str.strip().replace({"nan": ""})
 
-    grouped = (
-        df.groupby(["Tanggal", "NamaItem"], as_index=False)
-        .agg(Qty=("Qty", "sum"), HargaSatuan=("HargaSatuan", "max"))
-        .sort_values(["Tanggal", "NamaItem"])
+    # ITEM:ITEM NOTES dibentuk PER BARIS transaksi asli.
+    def make_notes(row):
+        return f"Petugas: {row['Petugas']} ; Nama Santri: {row['NamaSantri']}"
+
+    df["ItemNotes"] = df.apply(make_notes, axis=1)
+
+    # TIDAK ada penjumlahan/grouping lagi — Qty & Subtotal murni dipindah
+    # apa adanya dari tiap baris input (1 baris input = 1 baris output).
+    grouped = df.sort_values(["Tanggal", "NamaItem"]).reset_index(drop=True)
+
+    # ITEM:UNITPRICE = Subtotal (Rp) / Qty per baris (bukan dari Harga Satuan
+    # lagi, karena Harga Satuan tidak berubah walau ada diskon -> selisih)
+    grouped["UnitPrice"] = grouped.apply(
+        lambda r: (r["Subtotal"] / r["Qty"]) if r["Qty"] else 0, axis=1
     )
 
     # -----------------------------------------------------------------
@@ -632,9 +755,10 @@ if uploaded is not None:
             row["DATE"] = date_str
             row["ITEM:ITEM NO"] = kode_produk if kode_produk else accurate_name
             row["ITEM:QUANTITY"] = r["Qty"]
-            row["ITEM:UNITPRICE"] = r["HargaSatuan"]
-            row["ITEM:UNIT"] = "pcs"
+            row["ITEM:UNITPRICE"] = r["UnitPrice"]
+            row["ITEM:UNIT"] = get_unit(accurate_name, kode_produk)
             row["ITEM:WAREHOUSE NAME "] = warehouse_name
+            row["ITEM:ITEM NOTES"] = r["ItemNotes"]
             row["ITEM:DEPT NAME"] = "EKRAF"
             output_rows.append(row)
     out_df = pd.DataFrame(output_rows, columns=OUTPUT_HEADERS)
@@ -643,7 +767,12 @@ if uploaded is not None:
     st.caption(
         "Catatan: kolom yang tampil kosong di bawah ini memang sengaja dikosongkan "
         "(bukan teks \"None\") — saat di-export ke Excel, sel-sel ini akan benar-benar kosong. "
-        "CUSTOMER NO, NUMBER, BRANCH, dan DATE diisi di setiap baris item (tidak digabung/dikosongkan)."
+        "CUSTOMER NO, NUMBER, BRANCH, dan DATE diisi di setiap baris item (tidak digabung/dikosongkan). "
+        "ITEM:UNITPRICE dihitung dari Subtotal (Rp) ÷ Qty (bukan Harga Satuan), supaya diskon ikut terhitung. "
+        "ITEM:UNIT diambil dari tabel satuan per produk (bukan hardcode lagi), supaya nilainya konsisten "
+        "dan tidak tercampur pcs/PCS/PCs yang menyebabkan gagal import. "
+        "ITEM:ITEM NOTES diisi dari kolom Petugas & Nama Santri, format: "
+        "\"Petugas: <nama> ; Nama Santri: <nama>\"."
     )
     st.dataframe(out_df.fillna(""), use_container_width=True)
 
@@ -660,7 +789,7 @@ if uploaded is not None:
                 "Tanggal": r["Tanggal"].strftime("%d-%m-%Y"),
                 "Nama Item": r["NamaItem"],
                 "Qty": r["Qty"],
-                "Harga Satuan": r["HargaSatuan"],
+                "Subtotal (Rp)": r["Subtotal"],
                 "Catatan": guess_notes.get(r["NamaItem"], "Ditandai manual sebagai TIDAK TERDAFTAR"),
             })
 
