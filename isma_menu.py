@@ -227,6 +227,8 @@ def render_isma_menu():
     col_bulan = find_column(data, ["Bulan"])
     col_metode = find_column(data, ["Metode"])
     col_tgltransfer = find_column(data, ["Tgl Transfer"])
+    col_siswa = find_column(data, ["Siswa"])
+    col_nis = find_column(data, ["NIS"])
 
     product_cols_present = [c for c in ISMA_PRODUCT_COLS if find_column(data, [c])]
     product_col_map = {c: find_column(data, [c]) for c in product_cols_present}
@@ -234,15 +236,19 @@ def render_isma_menu():
     required_missing = [
         name for name, col in [
             ("No", col_no), ("Tgl", col_tgl), ("Periode", col_periode),
-            ("Bulan", col_bulan), ("Metode", col_metode), ("Tgl Transfer", col_tgltransfer),
+            ("Bulan", col_bulan), ("Metode", col_metode),
         ] if col is None
     ]
     if required_missing:
         st.error("Kolom berikut tidak ditemukan di file input: " + ", ".join(required_missing))
         st.stop()
 
-    # forward-fill kolom yang kosong di baris kontinuasi (No/Tgl/Periode/Metode/Tgl Transfer)
-    ffill_cols = [c for c in [col_no, col_noref, col_tgl, col_periode, col_metode, col_tgltransfer] if c is not None]
+    # forward-fill kolom yang kosong di baris kontinuasi
+    ffill_cols = [
+        c for c in [col_no, col_noref, col_tgl, col_periode, col_metode,
+                    col_tgltransfer, col_siswa, col_nis]
+        if c is not None
+    ]
     data[ffill_cols] = data[ffill_cols].ffill()
 
     # ambil daftar Bulan & Periode unik dari file untuk dropdown filter
@@ -283,21 +289,22 @@ def render_isma_menu():
                 if periode_val != selected_periode:
                     continue
 
-            if metode_raw == "cash":
-                tgl = parse_id_tanggal(r[col_tgl])
-            else:
-                tgl = parse_id_tanggal(r[col_tgltransfer])
-                if tgl is None:
-                    tgl = parse_id_tanggal(r[col_tgl])
-
+            # Tanggal SELALU diambil dari kolom "Tgl" (bukan "Tgl Transfer"),
+            # untuk cash maupun transfer.
+            tgl = parse_id_tanggal(r[col_tgl])
             if tgl is None:
                 continue
+
+            siswa_val = str(r[col_siswa]).strip() if col_siswa is not None and pd.notna(r[col_siswa]) else ""
+            nis_val = str(r[col_nis]).strip() if col_nis is not None and pd.notna(r[col_nis]) else ""
 
             records.append({
                 "Produk": prod,
                 "Nominal": float(val),
                 "Metode": metode_raw,
                 "Tanggal": tgl,
+                "Siswa": siswa_val,
+                "NIS": nis_val,
             })
 
     if not records:
@@ -323,15 +330,19 @@ def render_isma_menu():
     mapped_df = trans_df[~trans_df["Produk"].isin(unmapped_products)].copy()
     unmapped_df = trans_df[trans_df["Produk"].isin(unmapped_products)].copy()
 
-    # ----- Cash: total per (tanggal, produk). Transfer: apa adanya (tidak digabung) -----
+    # ----- Cash: total per (tanggal, produk), Siswa/NIS hilang krn digabung.
+    # ----- Transfer: apa adanya (tidak digabung), Siswa/NIS dipertahankan.
     cash_df = mapped_df[mapped_df["Metode"] == "cash"]
     transfer_df = mapped_df[mapped_df["Metode"] == "transfer"]
 
     cash_grouped = cash_df.groupby(["Tanggal", "Produk"], as_index=False).agg(Nominal=("Nominal", "sum"))
     cash_grouped["Metode"] = "cash"
+    cash_grouped["Siswa"] = ""
+    cash_grouped["NIS"] = ""
 
     final_lines = pd.concat(
-        [cash_grouped, transfer_df[["Tanggal", "Produk", "Nominal", "Metode"]]], ignore_index=True
+        [cash_grouped, transfer_df[["Tanggal", "Produk", "Nominal", "Metode", "Siswa", "NIS"]]],
+        ignore_index=True,
     )
     final_lines = final_lines.sort_values(["Tanggal", "Produk"])
 
@@ -341,22 +352,25 @@ def render_isma_menu():
     for (tanggal, produk), sub in final_lines.groupby(["Tanggal", "Produk"]):
         mmYY = tanggal.strftime("%m%y")
         dd = tanggal.strftime("%d")
-        number = f"ISMA-{produk}-{dept}-{mmYY}-{dd}"
+        base_number = f"ISMA-{produk}-{dept}-{mmYY}-{dd}"
         kode_barang = ISMA_PRODUCT_MAP.get((dept, produk))
+        # Tanggal ditulis persis format tanggal di file inputan (dd-mm-yyyy),
+        # bukan objek datetime (supaya tidak ikut ke-set jam saat ini).
+        date_str = tanggal.strftime("%d-%m-%Y")
 
-        first = True
-        for _, r in sub.iterrows():
+        for line_no, (_, r) in enumerate(sub.iterrows(), start=1):
             row = empty_row()
-            if first:
-                row["CUSTOMER NO"] = customer_no
-                row["NUMBER"] = number
-                row["BRANCH"] = cabang
-                row["DATE"] = tanggal.to_pydatetime()
-                first = False
+            # NUMBER dikasih suffix .1, .2, dst supaya unik per baris.
+            row["CUSTOMER NO"] = customer_no
+            row["NUMBER"] = f"{base_number}.{line_no}"
+            row["BRANCH"] = cabang
+            row["DATE"] = date_str
             row["ITEM:ITEM NO"] = kode_barang
             row["ITEM:QUANTITY"] = 1
             row["ITEM:UNITPRICE"] = r["Nominal"]
             row["ITEM:DEPT NAME"] = dept
+            if r["Metode"] == "transfer" and (r["Siswa"] or r["NIS"]):
+                row["DESCRIPTION"] = f"{r['Siswa']}_{r['NIS']}"
             output_rows.append(row)
 
     out_df = pd.DataFrame(output_rows, columns=TEMPLATE_HEADERS)
