@@ -297,6 +297,13 @@ def render_isma_menu():
 
             siswa_val = str(r[col_siswa]).strip() if col_siswa is not None and pd.notna(r[col_siswa]) else ""
             nis_val = str(r[col_nis]).strip() if col_nis is not None and pd.notna(r[col_nis]) else ""
+            # Tgl Transfer HANYA dipakai sebagai info tambahan di NUMBER &
+            # DESCRIPTION (bukan untuk menentukan tanggal transaksi lagi).
+            tgltransfer_dt = (
+                parse_id_tanggal(r[col_tgltransfer])
+                if col_tgltransfer is not None else None
+            )
+            tgltransfer_str = tgltransfer_dt.strftime("%d-%m-%Y") if tgltransfer_dt is not None else ""
 
             records.append({
                 "Produk": prod,
@@ -305,6 +312,7 @@ def render_isma_menu():
                 "Tanggal": tgl,
                 "Siswa": siswa_val,
                 "NIS": nis_val,
+                "TglTransfer": tgltransfer_str,
             })
 
     if not records:
@@ -330,8 +338,10 @@ def render_isma_menu():
     mapped_df = trans_df[~trans_df["Produk"].isin(unmapped_products)].copy()
     unmapped_df = trans_df[trans_df["Produk"].isin(unmapped_products)].copy()
 
-    # ----- Cash: total per (tanggal, produk), Siswa/NIS hilang krn digabung.
-    # ----- Transfer: apa adanya (tidak digabung), Siswa/NIS dipertahankan.
+    # ----- Cash: total per (tanggal, produk); Siswa/NIS/TglTransfer hilang
+    #       karena digabung.
+    # ----- Transfer: apa adanya (tidak digabung), Siswa/NIS/TglTransfer
+    #       dipertahankan.
     cash_df = mapped_df[mapped_df["Metode"] == "cash"]
     transfer_df = mapped_df[mapped_df["Metode"] == "transfer"]
 
@@ -339,9 +349,13 @@ def render_isma_menu():
     cash_grouped["Metode"] = "cash"
     cash_grouped["Siswa"] = ""
     cash_grouped["NIS"] = ""
+    cash_grouped["TglTransfer"] = ""
 
     final_lines = pd.concat(
-        [cash_grouped, transfer_df[["Tanggal", "Produk", "Nominal", "Metode", "Siswa", "NIS"]]],
+        [
+            cash_grouped,
+            transfer_df[["Tanggal", "Produk", "Nominal", "Metode", "Siswa", "NIS", "TglTransfer"]],
+        ],
         ignore_index=True,
     )
     final_lines = final_lines.sort_values(["Tanggal", "Produk"])
@@ -360,17 +374,22 @@ def render_isma_menu():
 
         for line_no, (_, r) in enumerate(sub.iterrows(), start=1):
             row = empty_row()
-            # NUMBER dikasih suffix .1, .2, dst supaya unik per baris.
+            # NUMBER dikasih suffix .1, .2, dst supaya unik per baris, lalu
+            # kalau ada Tgl Transfer disisipkan juga di ujung NUMBER.
+            number_val = f"{base_number}.{line_no}"
+            if r["TglTransfer"]:
+                number_val = f"{number_val}-{r['TglTransfer']}"
             row["CUSTOMER NO"] = customer_no
-            row["NUMBER"] = f"{base_number}.{line_no}"
+            row["NUMBER"] = number_val
             row["BRANCH"] = cabang
             row["DATE"] = date_str
             row["ITEM:ITEM NO"] = kode_barang
             row["ITEM:QUANTITY"] = 1
             row["ITEM:UNITPRICE"] = r["Nominal"]
             row["ITEM:DEPT NAME"] = dept
-            if r["Metode"] == "transfer" and (r["Siswa"] or r["NIS"]):
-                row["DESCRIPTION"] = f"{r['Siswa']}_{r['NIS']}"
+            if r["Metode"] == "transfer" and (r["Siswa"] or r["NIS"] or r["TglTransfer"]):
+                desc_parts = [p for p in [r["Siswa"], r["NIS"], r["TglTransfer"]] if p]
+                row["DESCRIPTION"] = "_".join(desc_parts)
             output_rows.append(row)
 
     out_df = pd.DataFrame(output_rows, columns=TEMPLATE_HEADERS)
