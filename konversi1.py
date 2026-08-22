@@ -7,6 +7,13 @@ import streamlit as st
 
 st.set_page_config(page_title="Konversi LTQ ke Template Accurate", layout="wide")
 
+
+st.markdown("""
+<style>
+[data-testid="stAppDeployButton"], .stAppToolbar {display: none;}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------------------------------------------------------------------------
 # Master data (hardcoded sesuai spesifikasi)
 # ---------------------------------------------------------------------------
