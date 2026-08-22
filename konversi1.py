@@ -110,6 +110,7 @@ CONVERSION_TABLES = {
         ("Buku Risalah", "RISALAH"),
         ("Risalah", "RISALAH"),
         ("TAS AT-TARTIL", "TAS AT TARTIL"),
+        ("JUZ 30", "JUZ AMMA 30"),
     ],
     "Citamiang": [
         ("AYAT GHORIBAH", "BUKU AYAT GHORIB"),
@@ -217,6 +218,7 @@ CONVERSION_TABLES = {
         ("RAPOT DEWASA", "RAPOT DEWASA"),
         ("RISALAH", "RISALAH"),
         ("TAS AT TARTIL", "TAS AT TARTIL"),
+        ("JUZ AMMA 30", "JUZ AMMA 30"),
     ],
     "Karang Tengah": [
         ("AYAT GHORIBAH", "BUKU AYAT GHORIB"),
