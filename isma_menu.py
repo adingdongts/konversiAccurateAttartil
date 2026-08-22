@@ -366,7 +366,6 @@ def render_isma_menu():
     for (tanggal, produk), sub in final_lines.groupby(["Tanggal", "Produk"]):
         mmYY = tanggal.strftime("%m%y")
         dd = tanggal.strftime("%d")
-        base_number = f"ISMA-{produk}-{dept}-{mmYY}-{dd}"
         kode_barang = ISMA_PRODUCT_MAP.get((dept, produk))
         # Tanggal ditulis persis format tanggal di file inputan (dd-mm-yyyy),
         # bukan objek datetime (supaya tidak ikut ke-set jam saat ini).
@@ -374,6 +373,11 @@ def render_isma_menu():
 
         for line_no, (_, r) in enumerate(sub.iterrows(), start=1):
             row = empty_row()
+            # Metode (CASH/TRANSFER) diambil per baris dari kolom "Metode",
+            # disisipkan ke NUMBER. Diambil per baris (bukan per grup) karena
+            # 1 grup (tanggal+produk) bisa berisi campuran cash & transfer.
+            metode_label = r["Metode"].upper()
+            base_number = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}"
             # NUMBER dikasih suffix .1, .2, dst supaya unik per baris, lalu
             # kalau ada Tgl Transfer disisipkan juga di ujung NUMBER.
             number_val = f"{base_number}.{line_no}"
@@ -388,7 +392,7 @@ def render_isma_menu():
             row["ITEM:UNITPRICE"] = r["Nominal"]
             row["ITEM:DEPT NAME"] = dept
             if r["Metode"] == "transfer" and (r["Siswa"] or r["NIS"] or r["TglTransfer"]):
-                desc_parts = [p for p in [r["Siswa"], r["NIS"], r["TglTransfer"]] if p]
+                desc_parts = [p for p in [r["Siswa"], r["NIS"], f"tgl transfer_{r['TglTransfer']}"] if p]
                 row["DESCRIPTION"] = "_".join(desc_parts)
             output_rows.append(row)
 
