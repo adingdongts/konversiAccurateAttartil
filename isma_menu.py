@@ -235,6 +235,7 @@ def render_isma_menu():
     col_tgltransfer = find_column(data, ["Tgl Transfer"])
     col_siswa = find_column(data, ["Siswa"])
     col_nis = find_column(data, ["NIS"])
+    col_bank = find_column(data, ["Akun Bank", "Bank"])
 
     col_spp = find_column(data, ["SPP"])
     if col_spp is None:
@@ -257,7 +258,7 @@ def render_isma_menu():
     # forward-fill kolom yang kosong di baris kontinuasi
     ffill_cols = [
         c for c in [col_no, col_noref, col_tgl, col_periode, col_metode,
-                    col_tgltransfer, col_siswa, col_nis]
+                    col_tgltransfer, col_siswa, col_nis, col_bank]
         if c is not None
     ]
     data[ffill_cols] = data[ffill_cols].ffill()
@@ -302,8 +303,11 @@ def render_isma_menu():
 
             siswa_val = str(r[col_siswa]).strip() if col_siswa is not None and pd.notna(r[col_siswa]) else ""
             nis_val = str(r[col_nis]).strip() if col_nis is not None and pd.notna(r[col_nis]) else ""
-            # Tgl Transfer HANYA dipakai sebagai info tambahan di NUMBER &
-            # DESCRIPTION (bukan untuk menentukan tanggal transaksi lagi).
+            noref_val = str(r[col_noref]).strip() if col_noref is not None and pd.notna(r[col_noref]) else ""
+            bank_val = str(r[col_bank]).strip() if col_bank is not None and pd.notna(r[col_bank]) else ""
+            # Tgl Transfer HANYA dipakai sebagai info tambahan di ITEM:ITEM
+            # NOTES (bukan untuk menentukan tanggal transaksi, dan tidak lagi
+            # disisipkan ke NUMBER).
             tgltransfer_dt = (
                 parse_id_tanggal(r[col_tgltransfer])
                 if col_tgltransfer is not None else None
@@ -317,6 +321,8 @@ def render_isma_menu():
                 "Tanggal": tgl,
                 "Siswa": siswa_val,
                 "NIS": nis_val,
+                "NoRef": noref_val,
+                "Bank": bank_val,
                 "TglTransfer": tgltransfer_str,
             })
 
@@ -356,12 +362,14 @@ def render_isma_menu():
     cash_grouped["Metode"] = "cash"
     cash_grouped["Siswa"] = ""
     cash_grouped["NIS"] = ""
+    cash_grouped["NoRef"] = ""
+    cash_grouped["Bank"] = ""
     cash_grouped["TglTransfer"] = ""
 
     final_lines = pd.concat(
         [
             cash_grouped,
-            transfer_df[["Tanggal", "Produk", "Nominal", "Metode", "Siswa", "NIS", "TglTransfer"]],
+            transfer_df[["Tanggal", "Produk", "Nominal", "Metode", "Siswa", "NIS", "NoRef", "Bank", "TglTransfer"]],
         ],
         ignore_index=True,
     )
@@ -385,11 +393,9 @@ def render_isma_menu():
             # 1 grup (tanggal+produk) bisa berisi campuran cash & transfer.
             metode_label = r["Metode"].upper()
             base_number = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}"
-            # NUMBER dikasih suffix .1, .2, dst supaya unik per baris, lalu
-            # kalau ada Tgl Transfer disisipkan juga di ujung NUMBER.
+            # NUMBER dikasih suffix .1, .2, dst supaya unik per baris.
+            # Tidak ada lagi tanggal transfer disisipkan di akhir NUMBER.
             number_val = f"{base_number}.{line_no}"
-            if r["TglTransfer"]:
-                number_val = f"{number_val}-{r['TglTransfer']}"
             row["CUSTOMER NO"] = customer_no
             row["NUMBER"] = number_val
             row["BRANCH"] = cabang
@@ -398,9 +404,25 @@ def render_isma_menu():
             row["ITEM:QUANTITY"] = 1
             row["ITEM:UNITPRICE"] = r["Nominal"]
             row["ITEM:DEPT NAME"] = dept
-            if r["Metode"] == "transfer" and (r["Siswa"] or r["NIS"] or r["TglTransfer"]):
-                desc_parts = [p for p in [r["Siswa"], r["NIS"], f"tgl transfer_{r['TglTransfer']}"] if p]
-                row["DESCRIPTION"] = "_".join(desc_parts)
+
+            # ITEM:ITEM NOTES: kalau transfer -> nama bank & tanggal transfer;
+            # kalau cash -> cukup "Cash".
+            if r["Metode"] == "transfer":
+                notes_parts = []
+                if r["Bank"]:
+                    notes_parts.append(f"Bank: {r['Bank']}")
+                if r["TglTransfer"]:
+                    notes_parts.append(f"Tanggal Transfer: {r['TglTransfer']}")
+                row["ITEM:ITEM NOTES"] = "; ".join(notes_parts) if notes_parts else "Transfer"
+            else:
+                row["ITEM:ITEM NOTES"] = "Cash"
+
+            # DESCRIPTION: format "{Nama Siswa}_{No Ref}", hanya untuk transfer
+            # (cash sudah digabung lintas siswa jadi tidak ada siswa/no ref
+            # tunggal yang bisa dipakai).
+            if r["Metode"] == "transfer" and (r["Siswa"] or r["NoRef"]):
+                row["DESCRIPTION"] = f"{r['Siswa']}_{r['NoRef']}"
+
             output_rows.append(row)
 
     out_df = pd.DataFrame(output_rows, columns=TEMPLATE_HEADERS)
