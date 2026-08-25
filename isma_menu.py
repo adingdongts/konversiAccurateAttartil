@@ -101,6 +101,8 @@ ISMA_CUSTOMERS = [
 ]
 
 # (Departemen, Nama Produk ISMA) -> Kode Barang di Accurate
+# Catatan: hanya entry "SPP" per departemen yang sekarang benar-benar
+# dipakai; entry lain tetap disimpan sebagai referensi tapi tidak diproses.
 ISMA_PRODUCT_MAP = {
     ("TD01", "IP"): "TD01.IP-2026",
     ("TD01", "DKS"): "TD01.DKS-26Sem1",
@@ -150,8 +152,10 @@ ISMA_PRODUCT_MAP = {
     ("KC01", "DB"): "KC01.DB-2026",
 }
 
-# kolom produk yang mungkin muncul di file input Laporan Pembayaran
-ISMA_PRODUCT_COLS = ["Buku", "PKBM", "DKS", "SPP", "IP", "DB", "MRTL", "DU"]
+# Kolom produk yang diproses menu ini. CATATAN REVISI: sekarang HANYA "SPP"
+# yang diproses -- Buku/PKBM/DKS/IP/DB/MRTL/DU dikeluarkan sepenuhnya,
+# tidak akan pernah muncul di sheet Template maupun sheet Unregister.
+ISMA_PRODUCT_COLS = ["SPP"]
 
 
 def parse_id_tanggal(s):
@@ -162,10 +166,12 @@ def parse_id_tanggal(s):
 
 
 def render_isma_menu():
-    st.title("📚 Konversi Laporan Pembayaran ISMA ")
+    st.title("📚 Konversi Laporan Pembayaran ISMA (SPP)")
     st.caption(
         "Upload laporan pembayaran (Excel) untuk 1 departemen/unit, "
-        "lalu unduh file siap-import ke Accurate."
+        "lalu unduh file siap-import ke Accurate. "
+        "Catatan: menu ini HANYA memproses produk SPP — produk lain "
+        "(Buku, PKBM, DKS, IP, DB, dll) tidak diproses sama sekali."
     )
 
     st.header("1. Pilih Customer (Unit/Departemen)")
@@ -230,13 +236,18 @@ def render_isma_menu():
     col_siswa = find_column(data, ["Siswa"])
     col_nis = find_column(data, ["NIS"])
 
-    product_cols_present = [c for c in ISMA_PRODUCT_COLS if find_column(data, [c])]
-    product_col_map = {c: find_column(data, [c]) for c in product_cols_present}
+    col_spp = find_column(data, ["SPP"])
+    if col_spp is None:
+        st.error("Kolom 'SPP' tidak ditemukan di file input. Menu ini hanya memproses produk SPP.")
+        st.stop()
+    product_col_map = {"SPP": col_spp}
 
+    # Sekarang wajib: No, Tgl, Bulan, Periode, Metode. SPP difilter oleh
+    # Bulan DAN Periode sekaligus (baris harus cocok keduanya).
     required_missing = [
         name for name, col in [
-            ("No", col_no), ("Tgl", col_tgl), ("Periode", col_periode),
-            ("Bulan", col_bulan), ("Metode", col_metode),
+            ("No", col_no), ("Tgl", col_tgl), ("Bulan", col_bulan),
+            ("Periode", col_periode), ("Metode", col_metode),
         ] if col is None
     ]
     if required_missing:
@@ -260,17 +271,12 @@ def render_isma_menu():
         st.stop()
 
     st.header("3. Pilih Bulan & Periode Tagihan")
-    st.caption(
-        "Bulan Tagihan hanya dipakai untuk memfilter baris SPP. "
-        "Periode Tagihan dipakai untuk memfilter produk selain SPP (Buku, PKBM, DKS, IP, DB, dll)."
-    )
+    st.caption("Bulan Tagihan dan Periode Tagihan dipakai bersamaan untuk memfilter baris SPP yang diproses (baris harus cocok keduanya).")
     fc1, fc2 = st.columns(2)
     selected_bulan = fc1.selectbox("Bulan Tagihan (untuk SPP)", bulan_options, key="isma_bulan")
-    selected_periode = fc2.selectbox(
-        "Periode Tagihan (tahun ajaran, untuk selain SPP)", periode_options, key="isma_periode"
-    )
+    selected_periode = fc2.selectbox("Periode Tagihan (untuk SPP)", periode_options, key="isma_periode")
 
-    # ----- melt: pecah tiap kolom produk jadi baris transaksi tersendiri -----
+    # ----- melt: pecah kolom SPP jadi baris transaksi tersendiri -----
     records = []
     for _, r in data.iterrows():
         metode_raw = str(r[col_metode]).strip().lower() if pd.notna(r[col_metode]) else ""
@@ -280,14 +286,13 @@ def render_isma_menu():
             val = r[col]
             if pd.isna(val) or val == 0:
                 continue
-            if prod == "SPP":
-                bulan_val = str(r[col_bulan]).strip() if pd.notna(r[col_bulan]) else None
-                if bulan_val != selected_bulan:
-                    continue
-            else:
-                periode_val = str(r[col_periode]).strip() if pd.notna(r[col_periode]) else None
-                if periode_val != selected_periode:
-                    continue
+
+            bulan_val = str(r[col_bulan]).strip() if pd.notna(r[col_bulan]) else None
+            if bulan_val != selected_bulan:
+                continue
+            periode_val = str(r[col_periode]).strip() if pd.notna(r[col_periode]) else None
+            if periode_val != selected_periode:
+                continue
 
             # Tanggal SELALU diambil dari kolom "Tgl" (bukan "Tgl Transfer"),
             # untuk cash maupun transfer.
@@ -317,7 +322,7 @@ def render_isma_menu():
 
     if not records:
         st.warning(
-            "Tidak ada transaksi yang cocok dengan Bulan/Periode yang dipilih. "
+            "Tidak ada transaksi SPP yang cocok dengan Bulan & Periode yang dipilih. "
             "Coba pilih Bulan atau Periode lain."
         )
         return
@@ -325,6 +330,8 @@ def render_isma_menu():
     trans_df = pd.DataFrame(records)
 
     # produk yang tidak ada di mapping departemen ini -> unregister
+    # (untuk SPP normalnya selalu ada di ISMA_PRODUCT_MAP, tapi tetap dicek
+    # untuk jaga-jaga kalau departemen tertentu belum didaftarkan SPP-nya)
     unmapped_products = sorted({
         p for p in trans_df["Produk"].unique()
         if (dept, p) not in ISMA_PRODUCT_MAP
