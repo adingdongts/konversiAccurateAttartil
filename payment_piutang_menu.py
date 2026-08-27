@@ -440,12 +440,12 @@ def render_payment_piutang_menu():
 
             row = {h: None for h in PAYMENT_HEADERS}
             row["CUSTOMER NO"] = customer_no
-            row["NUMBER"] = number
+            row["NUMBER"] = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}.{line_no}"
             row["BRANCH"] = "Kantor Pusat"
             row["DATE"] = r["TglRaw"]
             row["EXPENSE ACCOUNT NO"] = expense_account
             row["PAYMENT TOTAL"] = r["Nominal"]
-            row["PAYMENT NUMBER"] = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}.{line_no}"
+            row["PAYMENT NUMBER"] = number
             row["PAYMENT VALUE"] = r["Nominal"]
             row["PAYING BANK"] = "Transfer Bank" if r["Metode"] == "transfer" else "Cash"
 
