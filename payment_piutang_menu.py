@@ -314,15 +314,15 @@ def render_payment_piutang_menu():
 
     st.header("3. Pilih Bulan Tagihan (khusus untuk SPP)")
     st.caption(
-        "Dipakai untuk membentuk NUMBER produk SPP (format DEPT.SPP-YYMM). "
-        "Hanya baris SPP yang Bulan-nya cocok yang diproses. Produk lain "
-        "(Buku/PKBM/DKS/IP/DB) tetap diproses untuk semua baris, memakai "
-        "kolom Periode masing-masing — tidak perlu pilih Periode manual."
+        "Khusus SPP: hanya baris dengan Bulan **sebelum** bulan yang dipilih di sini "
+        "yang diproses (dianggap tunggakan/backlog). Bulan yang dipilih sendiri dan "
+        "bulan sesudahnya TIDAK diproses. NUMBER tiap baris SPP tetap dibentuk sesuai "
+        "bulan aslinya masing-masing (format DEPT.SPP-YYMM). Produk lain "
+        "(Buku/PKBM/DKS/IP/DB) tidak dipengaruhi pilihan ini — dipakai kolom Periode masing-masing."
     )
     bulan_labels = [f"{INDO_MONTH_NAMES[m]} {y}" for y, m in bulan_periods]
     selected_label = st.selectbox("Bulan Tagihan (untuk SPP)", bulan_labels, key="payment_piutang_bulan")
     selected_year, selected_month = bulan_periods[bulan_labels.index(selected_label)]
-    selected_yymm = f"{selected_year % 100:02d}{selected_month:02d}"
 
     st.header("4. Pilih Periode Tagihan (khusus untuk selain SPP)")
     st.caption(
@@ -362,9 +362,12 @@ def render_payment_piutang_menu():
 
             if prod == "SPP":
                 bulan_val = r["_bulan_parsed"]
-                if pd.isna(bulan_val) or (bulan_val.year, bulan_val.month) != (selected_year, selected_month):
+                if pd.isna(bulan_val):
                     continue
-                number = f"{dept}.SPP-{selected_yymm}"
+                if (bulan_val.year, bulan_val.month) >= (selected_year, selected_month):
+                    continue
+                spp_number = f"{dept}.SPP-{bulan_val.year % 100:02d}{bulan_val.month:02d}"
+                number = spp_number
             else:
                 periode_val = str(r[col_periode]).strip() if pd.notna(r[col_periode]) else None
                 if periode_val != selected_periode:
