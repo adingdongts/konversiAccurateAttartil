@@ -64,7 +64,7 @@ BANK_ACCOUNT_TABLE = [
     ("BSI TKIT 1 - 7364769932", "11030"),
     ("BSI TK 2 - 1330000089", "11017"),
     ("BSI SDIT - 7364770175", "11029"),
-    ("BSI TABUNGAN SDIT - 7364770396", "11036"),
+    ("BSI TABUNGAN SDIT - 7364770396", ""),
     ("BSI - 483 - 7193011483", "11001"),
     ("BSI - 8964252740", "11011"),
     ("BSI KC - 7341714472", "11005"),
@@ -153,10 +153,11 @@ KNOWN_PIUTANG_NUMBERS = {
 }
 
 # Kolom produk yang diproses & kode invoice-nya di Accurate.
-PRODUCT_COLUMNS = ["Buku", "PKBM", "DKS", "SPP", "IP", "DB"]
+PRODUCT_COLUMNS = ["Buku", "PKBM", "DKS", "SPP", "IP", "DB", "MRTL", "DU"]
 PRODUCT_CODE_MAP = {
     "Buku": "BK", "PKBM": "PKBM", "DKS": "DKS",
     "SPP": "SPP", "IP": "IP", "DB": "DB",
+    "MRTL": "MRTL", "DU": "DU",
 }
 
 INDO_MONTH_NAMES = {
@@ -466,7 +467,7 @@ def render_payment_piutang_menu():
 
             row = {h: None for h in PAYMENT_HEADERS}
             row["CUSTOMER NO"] = customer_no
-            row["NUMBER"] = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}.{line_no}"
+            row["NUMBER"] = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}.{line_no}_P"
             row["BRANCH"] = "Kantor Pusat"
             row["DATE"] = r["TglRaw"]
             row["EXPENSE ACCOUNT NO"] = expense_account
