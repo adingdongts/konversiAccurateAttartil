@@ -64,7 +64,7 @@ BANK_ACCOUNT_TABLE = [
     ("BSI TKIT 1 - 7364769932", "11030"),
     ("BSI TK 2 - 1330000089", "11017"),
     ("BSI SDIT - 7364770175", "11029"),
-    ("BSI TABUNGAN SDIT - 7364770396", "11036"),
+    ("BSI TABUNGAN SDIT - 7364770396", ""),
     ("BSI - 483 - 7193011483", "11001"),
     ("BSI - 8964252740", "11011"),
     ("BSI KC - 7341714472", "11005"),
@@ -396,6 +396,23 @@ def render_payment_piutang_menu():
 
     trans_df = pd.DataFrame(records)
 
+    # Buang baris yang PERSIS sama (siswa, tanggal, produk, number, nominal,
+    # metode, akun bank) — biasanya karena baris kontinuasi ter-forward-fill
+    # dobel atau data mentahnya memang ada duplikat. Kalau dibiarkan, hasil
+    # akhirnya bisa punya NUMBER/PAYMENT NUMBER yang sama persis 2x, yang
+    # tidak boleh terjadi saat import ke Accurate.
+    before_dedup = len(trans_df)
+    trans_df = trans_df.drop_duplicates(
+        subset=["Produk", "Number", "Nominal", "Metode", "Tanggal", "Siswa", "NIS", "AkunBank"]
+    ).reset_index(drop=True)
+    n_dupe = before_dedup - len(trans_df)
+    if n_dupe > 0:
+        st.warning(
+            f"Ditemukan {n_dupe} baris transaksi yang persis duplikat (siswa, tanggal, "
+            "produk, nominal, metode sama semua) — otomatis dibuang supaya tidak dobel "
+            "di hasil akhir."
+        )
+
     # Cash: total per (tanggal, produk, number) — Siswa/NIS hilang karena digabung.
     # Transfer: apa adanya per baris — Siswa/NIS/AkunBank dipertahankan.
     cash_df = trans_df[trans_df["Metode"] == "cash"]
@@ -423,18 +440,27 @@ def render_payment_piutang_menu():
     output_rows = []
     unmatched_account_rows = []
     unknown_number_rows = []
+    reported_numbers = set()
 
-    for (tanggal, produk, number), sub in final_lines.groupby(["Tanggal", "Produk", "Number"]):
+    # PENTING: nomor urut (line_no) di kolom NUMBER (ISMA-...-dd.N) harus
+    # berjalan terus per (Tanggal, Produk) — TIDAK boleh direset per invoice
+    # (Number/piutang), supaya tidak ada 2 baris dengan NUMBER yang sama
+    # persis walau invoice-nya beda (misal 1 transaksi mencakup tunggakan
+    # beberapa bulan sekaligus, tiap bulan invoice-nya beda tapi tetap 1
+    # tanggal+produk yang sama).
+    for (tanggal, produk), sub in final_lines.groupby(["Tanggal", "Produk"]):
         mmYY = tanggal.strftime("%m%y")
         dd = tanggal.strftime("%d")
 
-        if number not in KNOWN_PIUTANG_NUMBERS:
-            unknown_number_rows.append({
-                "NUMBER": number, "Produk": produk,
-                "Catatan": "Tidak ditemukan di daftar piutang yang sudah ditanam di aplikasi",
-            })
-
         for line_no, (_, r) in enumerate(sub.iterrows(), start=1):
+            number = r["Number"]
+            if number not in KNOWN_PIUTANG_NUMBERS and number not in reported_numbers:
+                reported_numbers.add(number)
+                unknown_number_rows.append({
+                    "NUMBER": number, "Produk": produk,
+                    "Catatan": "Tidak ditemukan di daftar piutang yang sudah ditanam di aplikasi",
+                })
+
             metode_label = r["Metode"].upper()
             expense_account = get_expense_account(r["Metode"], r["AkunBank"], dept)
 
