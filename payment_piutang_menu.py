@@ -378,6 +378,7 @@ def render_payment_piutang_menu():
                 "Nominal": float(val),
                 "Metode": metode_raw,
                 "Tanggal": tgl,
+                "TglRaw": r[col_tgl],
                 "Siswa": str(r[col_siswa]).strip() if pd.notna(r[col_siswa]) else "",
                 "NIS": str(r[col_nis]).strip() if pd.notna(r[col_nis]) else "",
                 "AkunBank": str(r[col_akunbank]).strip() if pd.notna(r[col_akunbank]) else "",
@@ -397,7 +398,9 @@ def render_payment_piutang_menu():
     cash_df = trans_df[trans_df["Metode"] == "cash"]
     transfer_df = trans_df[trans_df["Metode"] == "transfer"]
 
-    cash_grouped = cash_df.groupby(["Tanggal", "Produk", "Number"], as_index=False).agg(Nominal=("Nominal", "sum"))
+    cash_grouped = cash_df.groupby(["Tanggal", "Produk", "Number"], as_index=False).agg(
+        Nominal=("Nominal", "sum"), TglRaw=("TglRaw", "first")
+    )
     cash_grouped["Metode"] = "cash"
     cash_grouped["Siswa"] = ""
     cash_grouped["NIS"] = ""
@@ -406,7 +409,7 @@ def render_payment_piutang_menu():
     final_lines = pd.concat(
         [
             cash_grouped,
-            transfer_df[["Tanggal", "Produk", "Number", "Nominal", "Metode", "Siswa", "NIS", "AkunBank"]],
+            transfer_df[["Tanggal", "Produk", "Number", "Nominal", "Metode", "Siswa", "NIS", "AkunBank", "TglRaw"]],
         ],
         ignore_index=True,
     )
@@ -436,7 +439,7 @@ def render_payment_piutang_menu():
             row["CUSTOMER NO"] = customer_no
             row["NUMBER"] = number
             row["BRANCH"] = "Kantor Pusat"
-            row["DATE"] = tanggal
+            row["DATE"] = r["TglRaw"]
             row["EXPENSE ACCOUNT NO"] = expense_account
             row["PAYMENT TOTAL"] = r["Nominal"]
             row["PAYMENT NUMBER"] = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}.{line_no}"
