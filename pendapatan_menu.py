@@ -328,6 +328,7 @@ def render_pendapatan_menu():
             header_row[7] = catatan
             header_row[8] = "Kantor Pusat"
             header_row[9] = None  # Pemberi dikosongkan
+            header_row[10] = "-"  # Kustom Karakter 1
             output_rows.append(header_row)
 
             account_row = [None] * N_COLS
