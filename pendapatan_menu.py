@@ -116,6 +116,19 @@ JENIS_ACCOUNT_MAP = {
     },
 }
 
+# Label "Jenis" yang dipakai untuk membentuk Nama Akun, misal:
+# "Dana Titipan TP Forsat- AGQ1", "Dana Titipan TP Seragam- KC01", dst.
+JENIS_LABEL_MAP = {
+    "Dana Forsat": "Forsat",
+    "Seragam": "Seragam",
+}
+
+
+def get_nama_akun(jenis: str, dept: str) -> str:
+    label = JENIS_LABEL_MAP.get(jenis, jenis)
+    return f"Dana Titipan TP {label}- {dept}"
+
+
 DARI_RE = re.compile(r"^(\S+)\s*-\s*(.+?)\s*\(Kelas", re.IGNORECASE)
 
 
@@ -326,7 +339,7 @@ def render_pendapatan_menu():
             header_row[2] = kas_bank
             header_row[4] = r["TglRaw"]
             header_row[7] = catatan
-            header_row[8] = "Kantor Pusat"
+            header_row[ 8] = "Kantor Pusat"
             header_row[9] = None  # Pemberi dikosongkan
             header_row[10] = "-"  # Kustom Karakter 1
             output_rows.append(header_row)
@@ -334,6 +347,7 @@ def render_pendapatan_menu():
             account_row = [None] * N_COLS
             account_row[0] = "ACCOUNT"
             account_row[1] = no_akun
+            account_row[2] = get_nama_akun(jenis, dept) if no_akun else None
             account_row[3] = r["Nominal"]
             account_row[4] = dept
             account_row[6] = catatan_akun
