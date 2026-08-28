@@ -5,7 +5,7 @@ st.set_page_config(page_title="Menu Konversi Accurate", layout="wide")
 st.sidebar.title("📋 Pilih Menu")
 menu = st.sidebar.radio(
     "Menu",
-    ["LTQ", "Isma", "Payment Isma", "Payment Piutang Isma"],
+    ["LTQ", "Isma", "Payment Isma", "Payment Piutang Isma", "Template Pendapatan"],
     label_visibility="collapsed",
 )
 
@@ -51,3 +51,15 @@ elif menu == "Payment Piutang Isma":
         # payment_piutang_menu.py hanya MENDEFINISIKAN render_payment_piutang_menu(),
         # jadi harus dipanggil manual di sini supaya benar-benar tampil (bukan blank).
         namespace["render_payment_piutang_menu"]()
+elif menu == "Template Pendapatan":
+    with open("pendapatan_menu.py", encoding="utf-8") as f:
+        code = f.read()
+    if not code.strip():
+        st.title("💰 Menu Template Pendapatan")
+        st.warning("pendapatan_menu.py masih kosong — belum ada kode untuk menu ini.")
+    else:
+        namespace = {"__name__": "__main__"}
+        exec(code, namespace)
+        # pendapatan_menu.py hanya MENDEFINISIKAN render_pendapatan_menu(),
+        # jadi harus dipanggil manual di sini supaya benar-benar tampil (bukan blank).
+        namespace["render_pendapatan_menu"]()
