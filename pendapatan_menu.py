@@ -260,7 +260,7 @@ def render_pendapatan_menu():
             "Nominal": float(jumlah),
             "Metode": metode_raw,
             "Tanggal": tgl,
-            "TglRaw": tgl.strftime("%d-%m-%Y"),
+            "TglRaw": tgl.strftime("%d/%m/%Y"),
             "Nama": nama,
             "NIS": nis,
             "AkunBank": akun_bank,
