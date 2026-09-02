@@ -78,6 +78,8 @@ CONVERSION_TABLES = {
         ("RAPOT DEWASA", "RAPOT DEWASA"),
         ("RISALAH", "RISALAH"),
         ("TAS AT TARTIL", "TAS AT TARTIL"),
+        ("BUKU MENULIS HIJAIYYAH", "BUKU MENULIS HIJAIYYAH"),
+        ("Buku Ayat Ghorib", "Buku Ayat Ghorib"),
     ],
     "Cibatu": [
         ("AYAT GHORIBAH", "BUKU AYAT GHORIB"),
@@ -118,6 +120,9 @@ CONVERSION_TABLES = {
         ("Risalah", "RISALAH"),
         ("TAS AT-TARTIL", "TAS AT TARTIL"),
         ("JUZ 30", "JUZ AMMA 30"),
+        ("BUKU MENULIS HIJAIYYAH", "BUKU MENULIS HIJAIYYAH"),
+        ("Juz amma 30", "Juz amma 30"),
+        ("Buku Ayat Ghorib", "Buku Ayat Ghorib"),
     ],
     "Citamiang": [
         ("AYAT GHORIBAH", "BUKU AYAT GHORIB"),
@@ -193,6 +198,10 @@ CONVERSION_TABLES = {
         ("Risalah", "RISALAH"),
         ("TAS AT-TARTIL", "TAS AT TARTIL"),
         ("Tas At-Tartil", "TAS AT TARTIL"),
+        ("IQRA ANAK 6 JILID", "IQRA ANAK 6 JILID"),
+        ("(Item Tidak Diketahui - ID IQRO DEWASA KERTAS B)", "IQRO DEWASA KERTAS BURAM"),
+        ("IQRO DEWASA KERTAS BURAM", "IQRO DEWASA KERTAS BURAM"),
+        ("BUKU MENULIS HIJAIYYAH", "BUKU MENULIS HIJAIYYAH"),
     ],
     "Cikembar": [
         ("AYAT GHORIBAH", "BUKU AYAT GHORIB"),
@@ -226,6 +235,8 @@ CONVERSION_TABLES = {
         ("RISALAH", "RISALAH"),
         ("TAS AT TARTIL", "TAS AT TARTIL"),
         ("JUZ AMMA 30", "JUZ AMMA 30"),
+        ("(Item Tidak Diketahui - ID IQRO DEWASA KERTAS B)", "IQRO DEWASA KERTAS BURAM"),
+        ("IQRO DEWASA KERTAS BURAM", "IQRO DEWASA KERTAS BURAM"),
     ],
     "Karang Tengah": [
         ("AYAT GHORIBAH", "BUKU AYAT GHORIB"),
@@ -286,6 +297,8 @@ CONVERSION_TABLES = {
         ("Risalah", "RISALAH"),
         ("TAS AT-TARTIL", "TAS AT TARTIL"),
         ("Pustaka Ekraf", None),
+        ("(Item Tidak Diketahui - ID IQRO DEWASA (HVS PUT)", "IQRO DEWASA (HVS PUTIH WARNA)"),
+        ("IQRO DEWASA (HVS PUTIH WARNA)", "IQRO DEWASA (HVS PUTIH WARNA)"),
     ],
 }
 
@@ -472,6 +485,7 @@ UNIT_TABLE = [
     ("MUTABAAH DEWASA", "pcs"),
     ("Juz amma 30", "pcs"),
     ("BUKU HIJAIYAH", "PCS"),
+    ("BUKU MENULIS HIJAIYYAH", "pcs"),
 ]
 # Buang entry dengan value kosong (biar tidak override DEFAULT_UNIT dengan "")
 UNIT_TABLE = [(k, v) for k, v in UNIT_TABLE if v]
