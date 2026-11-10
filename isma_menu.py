@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 # ---------------------------------------------------------------------------
-# Header kolom TEMPLATE Accurate (urutan harus persis)
+# Header kolom TEMPLATE Accurate — Faktur Penjualan (urutan harus persis)
 # ---------------------------------------------------------------------------
 TEMPLATE_HEADERS = [
     "CUSTOMER NO", "NUMBER", "BRANCH", "DATE", "TAXABLE", "ADDRESS",
@@ -54,6 +54,16 @@ TEMPLATE_HEADERS = [
     "EXPENSE:SALES ORDER NO",
 ]
 
+# ---------------------------------------------------------------------------
+# Header kolom TEMPLATE PAYMENT Accurate — Template Pelunasan (urutan harus
+# persis). Dipakai untuk menghasilkan file pelunasan/piutang siap-import.
+# ---------------------------------------------------------------------------
+PAYMENT_HEADERS = [
+    "CUSTOMER NO", "NUMBER", "BRANCH", "DATE", "EXPENSE ACCOUNT NO",
+    "DESCRIPTION", "PAYMENT TOTAL", "PAYMENT NUMBER", "PAYMENT VALUE",
+    "PAYING BANK", "DISCOUNT ACCOUNT NO", "TOTAL DISCOUNT",
+]
+
 
 def empty_row():
     return {h: None for h in TEMPLATE_HEADERS}
@@ -85,6 +95,59 @@ def to_excel_bytes(df: pd.DataFrame, sheet_name: str) -> io.BytesIO:
         df.to_excel(writer, index=False, sheet_name=sheet_name)
     buf.seek(0)
     return buf
+
+
+# ---------------------------------------------------------------------------
+# Tabel konversi No Akun (Bank untuk transfer, Kas untuk cash) — dipakai
+# untuk mengisi EXPENSE ACCOUNT NO di Template Pelunasan. Sama seperti menu
+# Payment Piutang ISMA.
+# ---------------------------------------------------------------------------
+BANK_ACCOUNT_TABLE = [
+    ("BSI TAUD - 1330000038", "11013"),
+    ("BSI TKIT 1 - 7364769932", "11030"),
+    ("BSI TK 2 - 1330000089", "11017"),
+    ("BSI SDIT - 7364770175", "11029"),
+    ("BSI TABUNGAN SDIT - 7364770396", "11036"),
+    ("BSI - 483 - 7193011483", "11001"),
+    ("BSI - 8964252740", "11011"),
+    ("BSI KC - 7341714472", "11005"),
+    ("BSI LTQ 1 - 7180990156", "11018"),
+]
+BANK_ACCOUNT_MAP = {normalize(nama): akun for nama, akun in BANK_ACCOUNT_TABLE}
+
+CASH_ACCOUNT_TABLE = [
+    ("TD01", "100020305"),
+    ("TK01", "100020306"),
+    ("TK02", "100020307"),
+    ("SD01", "100020303"),
+    ("SPQ1", "100020304"),
+    ("KC01", "100020302"),
+]
+CASH_ACCOUNT_MAP = {normalize(dept): akun for dept, akun in CASH_ACCOUNT_TABLE}
+
+
+def get_expense_account(metode: str, akun_bank: str, dept: str):
+    """Tentukan No Akun untuk EXPENSE ACCOUNT NO di Template Pelunasan."""
+    if metode == "transfer":
+        return BANK_ACCOUNT_MAP.get(normalize(akun_bank)) if akun_bank else None
+    else:
+        return CASH_ACCOUNT_MAP.get(normalize(dept))
+
+
+def parse_bulan_mm_yyyy(s):
+    """
+    Parse kolom Bulan format 'MM-YYYY' (misal '08-2026') -> (year, month).
+    Mengembalikan (None, None) kalau tidak bisa diparse.
+    """
+    if pd.isna(s) or not s:
+        return None, None
+    parts = str(s).strip().split("-")
+    if len(parts) == 2:
+        try:
+            return int(parts[1]), int(parts[0])  # year, month
+        except ValueError:
+            pass
+    return None, None
 
 
 # =============================================================================
@@ -159,10 +222,11 @@ ISMA_PRODUCT_COLS = ["SPP"]
 
 
 def parse_id_tanggal(s):
-    """Parse tanggal format DD-MM-YYYY (string) jadi Timestamp."""
+    """Parse tanggal format DD-MM-YYYY (string) jadi Timestamp, atau None."""
     if pd.isna(s) or s in (None, "", "-"):
         return None
-    return pd.to_datetime(str(s), format="%d-%m-%Y", errors="coerce")
+    result = pd.to_datetime(str(s), format="%d-%m-%Y", errors="coerce")
+    return None if pd.isna(result) else result
 
 
 def render_isma_menu():
@@ -171,7 +235,13 @@ def render_isma_menu():
         "Upload laporan pembayaran (Excel) untuk 1 departemen/unit, "
         "lalu unduh file siap-import ke Accurate. "
         "Catatan: menu ini HANYA memproses produk SPP — produk lain "
-        "(Buku, PKBM, DKS, IP, DB, dll) tidak diproses sama sekali."
+        "(Buku, PKBM, DKS, IP, DB, dll) tidak diproses sama sekali.\n\n"
+        "Aturan baru (sesuai aturan_template ISMA): untuk transaksi "
+        "TRANSFER, bulan tanggal transaksi (kolom Tgl) harus sama dengan "
+        "bulan tanggal transfer (kolom Tgl Transfer). Jika bulannya "
+        "berbeda, baris tersebut TIDAK dibuatkan template melainkan "
+        "dimasukkan ke file notifikasi. Untuk transfer yang diproses, "
+        "tanggal yang dipakai adalah tanggal transfer (kolom Tgl Transfer)."
     )
 
     st.header("1. Pilih Customer (Unit/Departemen)")
@@ -277,8 +347,24 @@ def render_isma_menu():
     selected_bulan = fc1.selectbox("Bulan Tagihan (untuk SPP)", bulan_options, key="isma_bulan")
     selected_periode = fc2.selectbox("Periode Tagihan (untuk SPP)", periode_options, key="isma_periode")
 
+    # Hitung nomor piutang SPP (PAYMENT NUMBER) dari Bulan yang dipilih.
+    # Format: {dept}.SPP-{YYMM}, contoh "SD01.SPP-2608" untuk Bulan "08-2026".
+    bulan_year, bulan_month = parse_bulan_mm_yyyy(selected_bulan)
+    if bulan_year and bulan_month:
+        spp_piutang_number = f"{dept}.SPP-{bulan_year % 100:02d}{bulan_month:02d}"
+    else:
+        spp_piutang_number = ISMA_PRODUCT_MAP.get((dept, "SPP"), "")
+
     # ----- melt: pecah kolom SPP jadi baris transaksi tersendiri -----
+    #
+    # ATURAN BARU (sesuai aturan_template ISMA):
+    #   - Untuk TRANSFER: bulan tanggal transaksi (kolom Tgl / C) harus SAMA
+    #     dengan bulan tanggal transfer (kolom Tgl Transfer / R). Jika berbeda,
+    #     baris masuk ke file notifikasi (tidak dibuatkan template).
+    #     Jika sama, tanggal yang dipakai = tanggal transfer (kolom R).
+    #   - Untuk CASH: selalu diproses, tanggal dari kolom Tgl (C).
     records = []
+    notification_records = []
     for _, r in data.iterrows():
         metode_raw = str(r[col_metode]).strip().lower() if pd.notna(r[col_metode]) else ""
         if metode_raw not in ("cash", "transfer"):
@@ -295,8 +381,7 @@ def render_isma_menu():
             if periode_val != selected_periode:
                 continue
 
-            # Tanggal SELALU diambil dari kolom "Tgl" (bukan "Tgl Transfer"),
-            # untuk cash maupun transfer.
+            # Tanggal transaksi (kolom C) — selalu di-parse untuk acuan.
             tgl = parse_id_tanggal(r[col_tgl])
             if tgl is None:
                 continue
@@ -305,20 +390,58 @@ def render_isma_menu():
             nis_val = str(r[col_nis]).strip() if col_nis is not None and pd.notna(r[col_nis]) else ""
             noref_val = str(r[col_noref]).strip() if col_noref is not None and pd.notna(r[col_noref]) else ""
             bank_val = str(r[col_bank]).strip() if col_bank is not None and pd.notna(r[col_bank]) else ""
-            # Tgl Transfer HANYA dipakai sebagai info tambahan di ITEM:ITEM
-            # NOTES (bukan untuk menentukan tanggal transaksi, dan tidak lagi
-            # disisipkan ke NUMBER).
-            tgltransfer_dt = (
-                parse_id_tanggal(r[col_tgltransfer])
-                if col_tgltransfer is not None else None
-            )
-            tgltransfer_str = tgltransfer_dt.strftime("%d-%m-%Y") if tgltransfer_dt is not None else ""
+
+            # ---- Logika matching bulan + tanggal efektif ----
+            if metode_raw == "transfer":
+                tgltransfer_dt = (
+                    parse_id_tanggal(r[col_tgltransfer])
+                    if col_tgltransfer is not None else None
+                )
+                if tgltransfer_dt is not None:
+                    tgltransfer_str = tgltransfer_dt.strftime("%d-%m-%Y")
+                    # Cek kecocokan bulan antara Tgl (C) dan Tgl Transfer (R).
+                    # Jika bulan & tahun berbeda -> notifikasi, tidak dibuatkan
+                    # template.
+                    if (tgl.month != tgltransfer_dt.month
+                            or tgl.year != tgltransfer_dt.year):
+                        notification_records.append({
+                            "Tgl Transaksi (C)": tgl.strftime("%d-%m-%Y"),
+                            "Tgl Transfer (R)": tgltransfer_str,
+                            "Bulan Transaksi": tgl.strftime("%m-%Y"),
+                            "Bulan Transfer": tgltransfer_dt.strftime("%m-%Y"),
+                            "Siswa": siswa_val,
+                            "NIS": nis_val,
+                            "No Ref": noref_val,
+                            "Metode": metode_raw,
+                            "Akun Bank": bank_val,
+                            "Produk": prod,
+                            "Nominal": float(val),
+                            "Bulan Tagihan": bulan_val,
+                            "Periode": periode_val,
+                            "Alasan": (
+                                f"Bulan transaksi ({tgl.strftime('%m-%Y')}) "
+                                f"berbeda dari bulan transfer "
+                                f"({tgltransfer_dt.strftime('%m-%Y')}) — "
+                                "tidak dibuatkan template"
+                            ),
+                        })
+                        continue
+                    # Bulan cocok -> tanggal efektif = tanggal transfer (R).
+                    effective_tgl = tgltransfer_dt
+                else:
+                    # Transfer tapi Tgl Transfer kosong -> pakai Tgl (C).
+                    effective_tgl = tgl
+                    tgltransfer_str = ""
+            else:
+                # Cash -> tanggal efektif = Tgl (C).
+                effective_tgl = tgl
+                tgltransfer_str = ""
 
             records.append({
                 "Produk": prod,
                 "Nominal": float(val),
                 "Metode": metode_raw,
-                "Tanggal": tgl,
+                "Tanggal": effective_tgl,
                 "Siswa": siswa_val,
                 "NIS": nis_val,
                 "NoRef": noref_val,
@@ -326,9 +449,22 @@ def render_isma_menu():
                 "TglTransfer": tgltransfer_str,
             })
 
+    # Tampilkan ringkasan baris yang masuk notifikasi (beda bulan).
+    if notification_records:
+        notif_df = pd.DataFrame(notification_records)
+        st.warning(
+            f"Ada **{len(notification_records)}** baris TRANSFER yang tidak "
+            f"dibuatkan template karena bulan transaksi (kolom Tgl) berbeda "
+            f"dari bulan transfer (kolom Tgl Transfer). Baris-baris ini "
+            f"tersedia di file notifikasi yang bisa diunduh di bawah."
+        )
+        with st.expander("Lihat daftar baris yang tidak diproses (notifikasi)"):
+            st.dataframe(notif_df, use_container_width=True, hide_index=True)
+
     if not records:
         st.warning(
-            "Tidak ada transaksi SPP yang cocok dengan Bulan & Periode yang dipilih. "
+            "Tidak ada transaksi SPP yang cocok dengan Bulan & Periode yang dipilih"
+            " (setelah memfilter baris transfer yang bulannya berbeda). "
             "Coba pilih Bulan atau Periode lain."
         )
         return
@@ -377,13 +513,15 @@ def render_isma_menu():
 
     st.header("4. Hasil Konversi")
 
+    # =======================================================================
+    # A. Template Faktur Penjualan (TEMPLATE_HEADERS)
+    # =======================================================================
     output_rows = []
     for (tanggal, produk), sub in final_lines.groupby(["Tanggal", "Produk"]):
         mmYY = tanggal.strftime("%m%y")
         dd = tanggal.strftime("%d")
         kode_barang = ISMA_PRODUCT_MAP.get((dept, produk))
-        # Tanggal ditulis persis format tanggal di file inputan (dd-mm-yyyy),
-        # bukan objek datetime (supaya tidak ikut ke-set jam saat ini).
+        # Tanggal ditulis persis format tanggal di file inputan (dd-mm-yyyy).
         date_str = tanggal.strftime("%d-%m-%Y")
 
         for line_no, (_, r) in enumerate(sub.iterrows(), start=1):
@@ -394,7 +532,6 @@ def render_isma_menu():
             metode_label = r["Metode"].upper()
             base_number = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}"
             # NUMBER dikasih suffix .1, .2, dst supaya unik per baris.
-            # Tidak ada lagi tanggal transfer disisipkan di akhir NUMBER.
             number_val = f"{base_number}.{line_no}"
             row["CUSTOMER NO"] = customer_no
             row["NUMBER"] = number_val
@@ -426,29 +563,115 @@ def render_isma_menu():
             output_rows.append(row)
 
     out_df = pd.DataFrame(output_rows, columns=TEMPLATE_HEADERS)
+    st.subheader("A. Template Faktur Penjualan")
     st.dataframe(out_df, use_container_width=True)
 
+    # =======================================================================
+    # B. Template Pelunasan (PAYMENT_HEADERS)
+    # =======================================================================
+    payment_rows = []
+    unmatched_account_rows = []
+    for (tanggal, produk), sub in final_lines.groupby(["Tanggal", "Produk"]):
+        mmYY = tanggal.strftime("%m%y")
+        dd = tanggal.strftime("%d")
+        date_str = tanggal.strftime("%d-%m-%Y")
+
+        for line_no, (_, r) in enumerate(sub.iterrows(), start=1):
+            metode_label = r["Metode"].upper()
+            expense_account = get_expense_account(r["Metode"], r["Bank"], dept)
+
+            prow = {h: None for h in PAYMENT_HEADERS}
+            prow["CUSTOMER NO"] = customer_no
+            prow["NUMBER"] = f"ISMA-{metode_label}-{produk}-{dept}-{mmYY}-{dd}.{line_no}_P"
+            prow["BRANCH"] = cabang
+            prow["DATE"] = date_str
+            prow["EXPENSE ACCOUNT NO"] = expense_account
+            prow["PAYMENT TOTAL"] = r["Nominal"]
+            prow["PAYMENT NUMBER"] = spp_piutang_number
+            prow["PAYMENT VALUE"] = r["Nominal"]
+            prow["PAYING BANK"] = "Transfer Bank" if r["Metode"] == "transfer" else "Cash"
+
+            # DESCRIPTION: transfer -> "{siswa}_{NIS}"; cash -> nomor piutang.
+            if r["Metode"] == "transfer":
+                if r["Siswa"] or r["NIS"]:
+                    prow["DESCRIPTION"] = f"{r['Siswa']}_{r['NIS']}"
+                else:
+                    prow["DESCRIPTION"] = "Transfer"
+            else:
+                prow["DESCRIPTION"] = spp_piutang_number
+
+            payment_rows.append(prow)
+
+            if expense_account is None:
+                unmatched_account_rows.append({
+                    "NUMBER": prow["NUMBER"],
+                    "PAYING BANK": prow["PAYING BANK"],
+                    "Dicari dari": r["Bank"] if r["Metode"] == "transfer" else f"CASH - {dept}",
+                    "Catatan": "Bank/Departemen tidak ditemukan di tabel konversi No Akun",
+                })
+
+    payment_df = pd.DataFrame(payment_rows, columns=PAYMENT_HEADERS)
+
+    if unmatched_account_rows:
+        st.warning(
+            f"Ada {len(unmatched_account_rows)} baris di Template Pelunasan yang "
+            "EXPENSE ACCOUNT NO-nya dikosongkan karena bank/departemen tidak "
+            "ditemukan di tabel konversi No Akun."
+        )
+        with st.expander("Lihat baris yang No Akun-nya tidak ketemu"):
+            st.dataframe(pd.DataFrame(unmatched_account_rows), use_container_width=True, hide_index=True)
+
+    st.subheader("B. Template Pelunasan")
+    st.dataframe(payment_df.fillna(""), use_container_width=True)
+
+    # =======================================================================
+    # C. Unregister (produk tidak ada di mapping)
+    # =======================================================================
     unmapped_df = unmapped_df.rename(columns={"Nominal": "Nominal (belum ditotal)"})
     unmapped_df["Departemen"] = dept
 
-    buf_main = to_excel_bytes(out_df, "Template")
+    # =======================================================================
+    # Download buttons
+    # =======================================================================
+    buf_faktur = to_excel_bytes(out_df, "Template")
+    buf_pelunasan = to_excel_bytes(payment_df, "Pelunasan")
     buf_unreg = to_excel_bytes(unmapped_df, "Unregister")
 
-    dl_col1, dl_col2 = st.columns(2)
-    with dl_col1:
+    st.header("5. Download")
+    dl1, dl2 = st.columns(2)
+    with dl1:
         st.download_button(
-            "⬇️ Download File Template Accurate (.xlsx)",
-            data=buf_main,
+            "⬇️ Download Template Faktur Penjualan (.xlsx)",
+            data=buf_faktur,
             file_name=f"Template_Accurate_ISMA_{dept}_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-    with dl_col2:
-        if not unmapped_df.empty:
-            st.download_button(
-                "⬇️ Download Daftar Unregister (.xlsx)",
-                data=buf_unreg,
-                file_name=f"Unregister_ISMA_{dept}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        else:
-            st.success("Semua produk sudah terdaftar di mapping, tidak ada yang perlu dicek.")
+    with dl2:
+        st.download_button(
+            "⬇️ Download Template Pelunasan (.xlsx)",
+            data=buf_pelunasan,
+            file_name=f"Template_Pelunasan_ISMA_{dept}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    # File notifikasi (baris transfer yang bulan transaksi != bulan transfer)
+    if notification_records:
+        notif_df = pd.DataFrame(notification_records)
+        buf_notif = to_excel_bytes(notif_df, "Notifikasi")
+        st.download_button(
+            "⬇️ Download File Notifikasi — Beda Bulan (.xlsx)",
+            data=buf_notif,
+            file_name=f"Notifikasi_ISMA_{dept}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    # Unregister
+    if not unmapped_df.empty:
+        st.download_button(
+            "⬇️ Download Daftar Unregister (.xlsx)",
+            data=buf_unreg,
+            file_name=f"Unregister_ISMA_{dept}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    else:
+        st.success("Semua produk sudah terdaftar di mapping, tidak ada yang perlu dicek.")
