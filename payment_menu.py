@@ -61,6 +61,7 @@ BANK_ACCOUNT_TABLE = [
     ("BSI - 8964252740", "11011"),
     ("BSI KC - 7341714472", "11005"),
     ("BSI LTQ 1 - 7180990156", "11018"),
+    ("BJB SDIT - 5210206036346", "11009"),
 ]
 BANK_ACCOUNT_MAP = {normalize(nama): akun for nama, akun in BANK_ACCOUNT_TABLE}
 
