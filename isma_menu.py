@@ -112,6 +112,7 @@ BANK_ACCOUNT_TABLE = [
     ("BSI - 8964252740", "11011"),
     ("BSI KC - 7341714472", "11005"),
     ("BSI LTQ 1 - 7180990156", "11018"),
+    ("BJB SDIT - 5210206036346", "11009"),
 ]
 BANK_ACCOUNT_MAP = {normalize(nama): akun for nama, akun in BANK_ACCOUNT_TABLE}
 
@@ -520,7 +521,10 @@ def render_isma_menu():
     for (tanggal, produk), sub in final_lines.groupby(["Tanggal", "Produk"]):
         mmYY = tanggal.strftime("%m%y")
         dd = tanggal.strftime("%d")
-        kode_barang = ISMA_PRODUCT_MAP.get((dept, produk))
+        # ITEM:ITEM NO untuk SPP diambil dari spp_piutang_number (dinamis
+        # sesuai bulan yang dipilih, misal SD01.SPP-2609 untuk September).
+        # Bukan dari ISMA_PRODUCT_MAP yang hardcode bulan awal tahun ajaran.
+        kode_barang = spp_piutang_number if produk == "SPP" else ISMA_PRODUCT_MAP.get((dept, produk))
         # Tanggal ditulis persis format tanggal di file inputan (dd-mm-yyyy).
         date_str = tanggal.strftime("%d-%m-%Y")
 
